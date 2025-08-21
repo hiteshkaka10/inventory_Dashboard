@@ -26,22 +26,26 @@ st.sidebar.title("📦 Inventory System")
 page = st.sidebar.radio("Navigation", ["🏠 Home", "📊 Dashboard", "📋 Item List", "🗓️ Movement Logs"])
 
 # ---------------------------
-# Home Page
+# Home Page with Buttons
 # ---------------------------
 if page == "🏠 Home":
-    st.title("Inventory Management System")
+    st.title("📦 Inventory Management System")
     st.markdown("Select an action below:")
 
-    action = st.selectbox("Choose Action", ["Add New Item", "Purchase Existing Item", "Move Items"])
+    col1, col2, col3 = st.columns(3)
+    add_btn = col1.button("➕ Add New Item")
+    move_btn = col2.button("🔄 Move Items")
+    purchase_btn = col3.button("💰 Purchase Items")
 
     df = st.session_state.inventory
 
-    if action == "Add New Item":
+    # ---------- Add New Item ----------
+    if add_btn:
         st.subheader("Add New Item")
         item_name = st.text_input("Item Name")
         location = st.selectbox("Location", ["Basement", "Shop"])
         qty = st.number_input("Initial Quantity", min_value=1, value=1)
-        if st.button("Add Item"):
+        if st.button("Add Item", key="add_submit"):
             if item_name.strip() == "":
                 st.error("Item name cannot be empty.")
             else:
@@ -53,7 +57,7 @@ if page == "🏠 Home":
                 }
                 st.session_state.inventory = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                 
-                # Log the addition
+                # Log
                 new_log = {
                     "Time": datetime.now(),
                     "Action": "Add Item",
@@ -68,45 +72,14 @@ if page == "🏠 Home":
                 st.success(f"Item '{item_name}' added to {location} with quantity {qty}.")
                 st.session_state.inventory.to_excel("inventory.xlsx", index=False)
 
-    elif action == "Purchase Existing Item":
-        st.subheader("Purchase Items (Increase Stock)")
-        if df.empty:
-            st.info("No items in inventory. Add new items first.")
-        else:
-            locations = df["Location"].unique().tolist()
-            selected_location = st.selectbox("Select Location", locations)
-            items_in_location = df[df["Location"] == selected_location]["Item"].tolist()
-            selected_items = st.multiselect("Select Items to Purchase", items_in_location)
-            quantities = {}
-            for item in selected_items:
-                quantities[item] = st.number_input(f"Quantity for {item}", min_value=1, value=1)
-            if st.button("Confirm Purchase"):
-                for item, qty in quantities.items():
-                    prev_count = int(df.loc[(df["Item"] == item) & (df["Location"] == selected_location), "Current_Stock"].values[0])
-                    df.loc[(df["Item"] == item) & (df["Location"] == selected_location), "Current_Stock"] += qty
-                    final_count = int(df.loc[(df["Item"] == item) & (df["Location"] == selected_location), "Current_Stock"].values[0])
-                    
-                    new_log = {
-                        "Time": datetime.now(),
-                        "Action": "Purchase",
-                        "Item": item,
-                        "Quantity": qty,
-                        "From_Location": None,
-                        "To_Location": selected_location,
-                        "Previous_Count": prev_count,
-                        "Final_Count": final_count
-                    }
-                    st.session_state.logs = pd.concat([st.session_state.logs, pd.DataFrame([new_log])], ignore_index=True)
-                st.success("Purchase completed!")
-                st.session_state.inventory.to_excel("inventory.xlsx", index=False)
-
-    elif action == "Move Items":
+    # ---------- Move Items ----------
+    if move_btn:
         st.subheader("Move Items Between Locations")
         if df.empty:
             st.info("No items in inventory. Add new items first.")
         else:
-            from_location = st.selectbox("From Location", ["Basement", "Shop"])
-            to_location = st.selectbox("To Location", ["Basement", "Shop"])
+            from_location = st.selectbox("From Location", ["Basement", "Shop"], key="from_loc")
+            to_location = st.selectbox("To Location", ["Basement", "Shop"], key="to_loc")
             if from_location == to_location:
                 st.warning("Source and destination cannot be the same.")
             else:
@@ -115,23 +88,15 @@ if page == "🏠 Home":
                 quantities = {}
                 for item in selected_items:
                     max_qty = int(df.loc[(df["Item"] == item) & (df["Location"] == from_location), "Current_Stock"].values[0])
-                    quantities[item] = st.number_input(f"Quantity for {item} (max {max_qty})", min_value=1, max_value=max_qty, value=1)
-                if st.button("Confirm Move"):
+                    quantities[item] = st.number_input(f"Quantity for {item} (max {max_qty})", min_value=1, max_value=max_qty, value=1, key=f"move_{item}")
+                if st.button("Confirm Move", key="move_submit"):
                     for item, qty in quantities.items():
                         prev_count = int(df.loc[(df["Item"] == item) & (df["Location"] == from_location), "Current_Stock"].values[0])
-                        # Decrease from source
                         df.loc[(df["Item"] == item) & (df["Location"] == from_location), "Current_Stock"] -= qty
-                        # Increase in destination
                         if ((df["Item"] == item) & (df["Location"] == to_location)).any():
                             df.loc[(df["Item"] == item) & (df["Location"] == to_location), "Current_Stock"] += qty
                         else:
-                            # Add new row if item doesn't exist in destination
-                            new_row = {
-                                "Item": item,
-                                "Location": to_location,
-                                "Initial_Stock": 0,
-                                "Current_Stock": qty
-                            }
+                            new_row = {"Item": item, "Location": to_location, "Initial_Stock": 0, "Current_Stock": qty}
                             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                             st.session_state.inventory = df
                         final_count = int(df.loc[(df["Item"] == item) & (df["Location"] == from_location), "Current_Stock"].values[0])
@@ -148,6 +113,38 @@ if page == "🏠 Home":
                         st.session_state.logs = pd.concat([st.session_state.logs, pd.DataFrame([new_log])], ignore_index=True)
                     st.success("Items moved successfully!")
                     st.session_state.inventory.to_excel("inventory.xlsx", index=False)
+
+    # ---------- Purchase Items ----------
+    if purchase_btn:
+        st.subheader("Purchase Existing Items")
+        if df.empty:
+            st.info("No items in inventory. Add new items first.")
+        else:
+            locations = df["Location"].unique().tolist()
+            selected_location = st.selectbox("Select Location", locations, key="purchase_loc")
+            items_in_location = df[df["Location"] == selected_location]["Item"].tolist()
+            selected_items = st.multiselect("Select Items to Purchase", items_in_location)
+            quantities = {}
+            for item in selected_items:
+                quantities[item] = st.number_input(f"Quantity for {item}", min_value=1, value=1, key=f"purchase_{item}")
+            if st.button("Confirm Purchase", key="purchase_submit"):
+                for item, qty in quantities.items():
+                    prev_count = int(df.loc[(df["Item"] == item) & (df["Location"] == selected_location), "Current_Stock"].values[0])
+                    df.loc[(df["Item"] == item) & (df["Location"] == selected_location), "Current_Stock"] += qty
+                    final_count = int(df.loc[(df["Item"] == item) & (df["Location"] == selected_location), "Current_Stock"].values[0])
+                    new_log = {
+                        "Time": datetime.now(),
+                        "Action": "Purchase",
+                        "Item": item,
+                        "Quantity": qty,
+                        "From_Location": None,
+                        "To_Location": selected_location,
+                        "Previous_Count": prev_count,
+                        "Final_Count": final_count
+                    }
+                    st.session_state.logs = pd.concat([st.session_state.logs, pd.DataFrame([new_log])], ignore_index=True)
+                st.success("Purchase completed!")
+                st.session_state.inventory.to_excel("inventory.xlsx", index=False)
 
 # ---------------------------
 # Dashboard
