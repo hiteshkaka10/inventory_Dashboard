@@ -18,9 +18,6 @@ if 'purchase_list' not in st.session_state:
 if 'current_page' not in st.session_state:
     st.session_state['current_page'] = "Home"
 
-def back_to_home():
-    st.session_state['current_page'] = "Home"
-    st.rerun()
 
 # Function to get Google Sheets credentials and client
 @st.cache_resource(ttl=3600)
@@ -81,24 +78,30 @@ def log_action(action, item_name, details):
 def fetch_inventory_data():
     """Fetches inventory data from the 'Inventory' worksheet."""
     try:
-        df_fetched = get_as_dataframe(ws, evaluate_formulas=True)
-        if not df_fetched.empty:
-            # Drop any empty rows from the DataFrame
-            df_fetched.dropna(how='all', inplace=True)
+        raw_df = get_as_dataframe(ws, evaluate_formulas=True)
+        
+        if raw_df.empty:
+            return pd.DataFrame()
             
-            # Drop any columns that are unnamed (e.g., empty header cells) and strip whitespace
-            df_fetched.columns = df_fetched.columns.astype(str).str.strip()
-            df_fetched = df_fetched.loc[:, df_fetched.columns.str.len() > 0]
-            
-            # Fill empty values and explicitly convert columns to string type for filtering
-            df_fetched['Item Name'] = df_fetched['Item Name'].fillna('').astype(str)
-            df_fetched['Category'] = df_fetched['Category'].fillna('').astype(str)
-            df_fetched['Location'] = df_fetched['Location'].fillna('').astype(str)
-            
-            # Convert stock and Sr No columns to numeric, filling NaNs with 0
-            df_fetched['Sr No'] = pd.to_numeric(df_fetched['Sr No'], errors='coerce').fillna(0).astype(int)
-            df_fetched['Initial stock'] = pd.to_numeric(df_fetched['Initial stock'], errors='coerce').fillna(0).astype(int)
-            df_fetched['Current Stock'] = pd.to_numeric(df_fetched['Current Stock'], errors='coerce').fillna(0).astype(int)
+        df_fetched = raw_df.copy()
+        
+        # Drop any empty rows from the DataFrame
+        df_fetched.dropna(how='all', inplace=True)
+        
+        # Drop any columns that are unnamed (e.g., empty header cells) and strip whitespace
+        df_fetched.columns = df_fetched.columns.astype(str).str.strip()
+        df_fetched = df_fetched.loc[:, df_fetched.columns.str.len() > 0]
+        
+        # Fill empty values and explicitly convert columns to string type for filtering
+        df_fetched['Item Name'] = df_fetched['Item Name'].fillna('').astype(str)
+        df_fetched['Category'] = df_fetched['Category'].fillna('').astype(str)
+        df_fetched['Location'] = df_fetched['Location'].fillna('').astype(str)
+        
+        # Convert stock and Sr No columns to numeric, filling NaNs with 0
+        df_fetched['Sr No'] = pd.to_numeric(df_fetched['Sr No'], errors='coerce').fillna(0).astype(int)
+        df_fetched['Initial stock'] = pd.to_numeric(df_fetched['Initial stock'], errors='coerce').fillna(0).astype(int)
+        df_fetched['Current Stock'] = pd.to_numeric(df_fetched['Current Stock'], errors='coerce').fillna(0).astype(int)
+
         return df_fetched
     except Exception as e:
         st.error(f"Failed to fetch inventory data. Error: {e}")
@@ -122,6 +125,10 @@ def fetch_logs_data():
 def clear_cache():
     """Clears the cache to fetch fresh data from Google Sheets."""
     st.cache_data.clear()
+    st.rerun()
+
+def back_to_home():
+    st.session_state['current_page'] = "Home"
     st.rerun()
 
 # --- Main App Logic ---
@@ -219,7 +226,7 @@ elif st.session_state['current_page'] == "View Items":
         filtered_df_with_delete['Delete?'] = False
 
         # Use st.data_editor for editing
-        edited_df = st.data_editor(filtered_df_with_delete, use_container_width=True)
+        edited_df = st.data_editor(filtered_df_with_delete, use_container_width=True, column_order=['Item Name', 'Category', 'Current Stock', 'Initial stock', 'Location', 'Delete?'])
 
         # Button to save changes
         if st.button('Save Changes'):
