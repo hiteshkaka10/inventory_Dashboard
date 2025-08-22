@@ -255,6 +255,15 @@ elif st.session_state['current_page'] == "View Items":
                     clear_cache()
             except Exception as e:
                 st.error(f"Error saving changes: {e}")
+        
+        # Download button for inventory list
+        csv = filtered_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Download Inventory List as CSV",
+            data=csv,
+            file_name='inventory_list.csv',
+            mime='text/csv',
+        )
 
     else:
         st.info("No data available to display or filter. Please add items using the sidebar.")
@@ -386,7 +395,8 @@ elif st.session_state['current_page'] == "Move Item":
                         df.loc[df['Item Name'] == item_name, 'Current Stock'] -= move_quantity
                         df.loc[df['Item Name'] == item_name, 'Location'] = to_location
                         
-                        log_action("Move", item_name, f"Moved {move_quantity} units from {move['From Location']} to {to_location}.")
+                        new_stock = df.loc[df['Item Name'] == item_name, 'Current Stock'].iloc[0]
+                        log_action("Move", item_name, f"Moved {move_quantity} units from {move['From Location']} to {to_location}. Remaining stock: {new_stock}.")
 
                     set_with_dataframe(ws, df, include_index=False, resize=True)
                     
@@ -447,7 +457,8 @@ elif st.session_state['current_page'] == "Purchase Item":
                         
                         df.loc[df['Item Name'] == item_name, 'Current Stock'] += purchase_quantity
                         
-                        log_action("Purchase", item_name, f"Purchased {purchase_quantity} units. New stock: {df.loc[df['Item Name'] == item_name, 'Current Stock'].iloc[0]}.")
+                        new_stock = df.loc[df['Item Name'] == item_name, 'Current Stock'].iloc[0]
+                        log_action("Purchase", item_name, f"Purchased {purchase_quantity} units. New stock: {new_stock}.")
 
                     set_with_dataframe(ws, df, include_index=False, resize=True)
                     
