@@ -214,7 +214,9 @@ if st.session_state['current_page'] == "Home":
         
         # Extract quantity from details using regex
         def get_quantity(details):
-            match = re.search(r"(\d+) units", details)
+            match = re.search(r"Moved (\d+) units", details)
+            if not match:
+                match = re.search(r"Purchased (\d+) units", details)
             return int(match.group(1)) if match else 0
 
         moves_df['Quantity'] = moves_df['Details'].apply(get_quantity)
@@ -519,88 +521,74 @@ elif st.session_state['current_page'] == "View Logs":
         
         if not filtered_logs_df.empty:
             
-            # Use data editor to allow for deletion
-            edited_logs_df = st.data_editor(filtered_logs_df.assign(key=range(len(filtered_logs_df))), 
+            # Create a revert button column
+            edited_logs_df = filtered_logs_df.copy()
+            edited_logs_df['Revert?'] = False
+
+            edited_logs_df = st.data_editor(edited_logs_df, 
                                            hide_index=True,
                                            use_container_width=True,
-                                           column_config={
-                                               "key": None,
-                                               "Timestamp": st.column_config.DatetimeColumn("Timestamp", format="YYYY-MM-DD HH:mm:ss"),
-                                               "Action": "Action",
-                                               "Item Name": "Item Name",
-                                               "Details": "Details",
-                                               "Revert": st.column_config.ButtonColumn("Revert?", help="Click to revert this action", disabled="disabled")
-                                           })
-
-            # Check for reverted items
-            reverted_item_keys = edited_logs_df[edited_logs_df['Revert?']].index.tolist()
-            if reverted_item_keys:
-                for key in reverted_item_keys:
-                    row_to_revert = edited_logs_df.loc[edited_logs_df['key'] == key].iloc[0]
-                    st.warning(f"Reverting action for item: {row_to_revert['Item Name']}")
+                                           column_order=["Timestamp", "Action", "Item Name", "Details", "Revert?"])
             
+            # Button to revert and delete selected logs
             if st.button('Revert and Delete Selected Logs'):
-                try:
-                    deleted_rows = edited_logs_df[edited_logs_df['Revert?']]
-                    
-                    if not deleted_rows.empty:
-                        for index, row in deleted_rows.iterrows():
-                            action = row['Action']
-                            item_name = row['Item Name']
-                            details = row['Details']
-                            
-                            # Parse quantity and location from details string
-                            if action == "Move":
-                                regex = r"Moved (\d+) units from (.+) to (.+)\. Stock changed from (\d+) to (\d+)\."
-                                match = re.search(regex, details)
-                                if match:
-                                    move_quantity = int(match.group(1))
-                                    from_location = match.group(2)
-                                    
-                                    # Perform reversal
-                                    df.loc[df['Item Name'] == item_name, 'Current Stock'] += move_quantity
-                                    df.loc[df['Item Name'] == item_name, 'Location'] = from_location
-                                    
-                                    log_action("Revert Move", item_name, f"Reverted move of {move_quantity} units. Location reverted to {from_location}.")
-
-                            elif action == "Purchase":
-                                regex = r"Purchased (\d+) units\. Stock changed from (\d+) to (\d+)\."
-                                match = re.search(regex, details)
-                                if match:
-                                    purchase_quantity = int(match.group(1))
-                                    
-                                    # Perform reversal
-                                    df.loc[df['Item Name'] == item_name, 'Current Stock'] -= purchase_quantity
-                                    
-                                    log_action("Revert Purchase", item_name, f"Reverted purchase of {purchase_quantity} units.")
-                            
-                            elif action == "Add":
-                                ws_inventory_data = ws.get_all_values()
-                                for i, row_values in enumerate(ws_inventory_data):
-                                    if row_values and row_values[1] == item_name:
-                                        ws.delete_rows(i + 1)
-                                        log_action("Revert Add", item_name, f"Deleted item that was previously added.")
-                                        break
-                                
-
-                        # Update inventory sheet
-                        set_with_dataframe(ws, df, include_index=False, resize=True)
-                        
-                        # Delete logs
-                        deleted_indices = deleted_rows.index.tolist()
-                        for index in sorted(deleted_indices, reverse=True):
-                            ws.delete_rows(index + 2)
-                        
-                        st.success("Selected logs have been reverted and deleted successfully! Refreshing data...")
-                        clear_cache()
-                    
-                else:
-                    st.info("No logs selected for deletion or reversion.")
                 
-            except Exception as e:
-                st.error(f"Error reverting action: {e}")
+                deleted_rows = edited_logs_df[edited_logs_df['Revert?']]
+                
+                if not deleted_rows.empty:
+                    for index, row in deleted_rows.iterrows():
+                        action = row['Action']
+                        item_name = row['Item Name']
+                        details = row['Details']
+                        
+                        # Perform reversal logic
+                        if action == "Move":
+                            regex = r"Moved (\d+) units from (.+) to (.+)\. Stock changed from (\d+) to (\d+)\."
+                            match = re.search(regex, details)
+                            if match:
+                                move_quantity = int(match.group(1))
+                                from_location = match.group(2)
+                                
+                                # Update inventory
+                                df.loc[df['Item Name'] == item_name, 'Current Stock'] += move_quantity
+                                df.loc[df['Item Name'] == item_name, 'Location'] = from_location
+                                log_action("Revert Move", item_name, f"Reverted move of {move_quantity} units. Location reverted to {from_location}.")
 
-            # st.download_button(...)
+                        elif action == "Purchase":
+                            regex = r"Purchased (\d+) units\. Stock changed from (\d+) to (\d+)\."
+                            match = re.search(regex, details)
+                            if match:
+                                purchase_quantity = int(match.group(1))
+                                
+                                # Update inventory
+                                df.loc[df['Item Name'] == item_name, 'Current Stock'] -= purchase_quantity
+                                log_action("Revert Purchase", item_name, f"Reverted purchase of {purchase_quantity} units.")
+                        
+                        elif action == "Add":
+                            # Find the row to delete from the original sheet
+                            ws_inventory_data = ws.get_all_values()
+                            for i, row_values in enumerate(ws_inventory_data):
+                                if row_values and row_values[1] == item_name:
+                                    ws.delete_rows(i + 1)
+                                    log_action("Revert Add", item_name, f"Deleted item that was previously added.")
+                                    break
+                            
+                    # Update inventory sheet
+                    set_with_dataframe(ws, df, include_index=False, resize=True)
+                    
+                    # Delete log entries
+                    deleted_indices = deleted_rows.index.tolist()
+                    for index in sorted(deleted_indices, reverse=True):
+                        ws.delete_rows(index + 2)
+                    
+                    st.success("Selected logs have been reverted and deleted successfully! Refreshing data...")
+                    clear_cache()
+                
+                
+            else:
+                st.info("No logs selected for deletion or reversion.")
+            
+            # Download button for logs
             csv = filtered_logs_df.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="Download Logs as CSV",
