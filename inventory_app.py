@@ -3,6 +3,7 @@ import pandas as pd
 import gspread
 from gspread_dataframe import get_as_dataframe, set_with_dataframe
 import datetime
+import re
 from google.oauth2.service_account import Credentials
 
 # --- Configuration & Setup ---
@@ -202,6 +203,34 @@ if st.session_state['current_page'] == "Home":
     
     st.markdown("---")
 
+    st.subheader("Monthly Inventory Activity")
+    
+    if not df_logs.empty:
+        # Prepare data for charts
+        df_logs['Month'] = df_logs['Timestamp'].dt.to_period('M').astype(str)
+        
+        moves_df = df_logs[df_logs['Action'].str.contains('Move')]
+        purchases_df = df_logs[df_logs['Action'].str.contains('Purchase')]
+        
+        # Extract quantity from details using regex
+        def get_quantity(details):
+            match = re.search(r"(\d+) units", details)
+            return int(match.group(1)) if match else 0
+
+        moves_df['Quantity'] = moves_df['Details'].apply(get_quantity)
+        purchases_df['Quantity'] = purchases_df['Details'].apply(get_quantity)
+        
+        monthly_moves = moves_df.groupby('Month')['Quantity'].sum().reset_index()
+        monthly_purchases = purchases_df.groupby('Month')['Quantity'].sum().reset_index()
+
+        col_charts = st.columns(2)
+        with col_charts[0]:
+            st.bar_chart(monthly_moves, x='Month', y='Quantity', color='#FF5733')
+            st.markdown("Monthly Item Movements")
+        with col_charts[1]:
+            st.bar_chart(monthly_purchases, x='Month', y='Quantity', color='#33FF57')
+            st.markdown("Monthly Item Purchases")
+
 # -----------------------------
 # View Items
 # -----------------------------
@@ -392,11 +421,12 @@ elif st.session_state['current_page'] == "Move Item":
                         move_quantity = move['Quantity']
                         to_location = move['To Location']
                         
+                        original_stock = df.loc[df['Item Name'] == item_name, 'Current Stock'].iloc[0]
                         df.loc[df['Item Name'] == item_name, 'Current Stock'] -= move_quantity
                         df.loc[df['Item Name'] == item_name, 'Location'] = to_location
                         
                         new_stock = df.loc[df['Item Name'] == item_name, 'Current Stock'].iloc[0]
-                        log_action("Move", item_name, f"Moved {move_quantity} units from {move['From Location']} to {to_location}. Remaining stock: {new_stock}.")
+                        log_action("Move", item_name, f"Moved {move_quantity} units from {move['From Location']} to {to_location}. Stock changed from {original_stock} to {new_stock}.")
 
                     set_with_dataframe(ws, df, include_index=False, resize=True)
                     
@@ -455,10 +485,11 @@ elif st.session_state['current_page'] == "Purchase Item":
                         item_name = purchase['Item Name']
                         purchase_quantity = purchase['Quantity']
                         
+                        original_stock = df.loc[df['Item Name'] == item_name, 'Current Stock'].iloc[0]
                         df.loc[df['Item Name'] == item_name, 'Current Stock'] += purchase_quantity
                         
                         new_stock = df.loc[df['Item Name'] == item_name, 'Current Stock'].iloc[0]
-                        log_action("Purchase", item_name, f"Purchased {purchase_quantity} units. New stock: {new_stock}.")
+                        log_action("Purchase", item_name, f"Purchased {purchase_quantity} units. Stock changed from {original_stock} to {new_stock}.")
 
                     set_with_dataframe(ws, df, include_index=False, resize=True)
                     
@@ -487,8 +518,89 @@ elif st.session_state['current_page'] == "View Logs":
         filtered_logs_df = df_logs[df_logs['Timestamp'].dt.date == log_date]
         
         if not filtered_logs_df.empty:
-            st.dataframe(filtered_logs_df, use_container_width=True)
+            
+            # Use data editor to allow for deletion
+            edited_logs_df = st.data_editor(filtered_logs_df.assign(key=range(len(filtered_logs_df))), 
+                                           hide_index=True,
+                                           use_container_width=True,
+                                           column_config={
+                                               "key": None,
+                                               "Timestamp": st.column_config.DatetimeColumn("Timestamp", format="YYYY-MM-DD HH:mm:ss"),
+                                               "Action": "Action",
+                                               "Item Name": "Item Name",
+                                               "Details": "Details",
+                                               "Revert": st.column_config.ButtonColumn("Revert?", help="Click to revert this action", disabled="disabled")
+                                           })
 
+            # Check for reverted items
+            reverted_item_keys = edited_logs_df[edited_logs_df['Revert?']].index.tolist()
+            if reverted_item_keys:
+                for key in reverted_item_keys:
+                    row_to_revert = edited_logs_df.loc[edited_logs_df['key'] == key].iloc[0]
+                    st.warning(f"Reverting action for item: {row_to_revert['Item Name']}")
+            
+            if st.button('Revert and Delete Selected Logs'):
+                try:
+                    deleted_rows = edited_logs_df[edited_logs_df['Revert?']]
+                    
+                    if not deleted_rows.empty:
+                        for index, row in deleted_rows.iterrows():
+                            action = row['Action']
+                            item_name = row['Item Name']
+                            details = row['Details']
+                            
+                            # Parse quantity and location from details string
+                            if action == "Move":
+                                regex = r"Moved (\d+) units from (.+) to (.+)\. Stock changed from (\d+) to (\d+)\."
+                                match = re.search(regex, details)
+                                if match:
+                                    move_quantity = int(match.group(1))
+                                    from_location = match.group(2)
+                                    
+                                    # Perform reversal
+                                    df.loc[df['Item Name'] == item_name, 'Current Stock'] += move_quantity
+                                    df.loc[df['Item Name'] == item_name, 'Location'] = from_location
+                                    
+                                    log_action("Revert Move", item_name, f"Reverted move of {move_quantity} units. Location reverted to {from_location}.")
+
+                            elif action == "Purchase":
+                                regex = r"Purchased (\d+) units\. Stock changed from (\d+) to (\d+)\."
+                                match = re.search(regex, details)
+                                if match:
+                                    purchase_quantity = int(match.group(1))
+                                    
+                                    # Perform reversal
+                                    df.loc[df['Item Name'] == item_name, 'Current Stock'] -= purchase_quantity
+                                    
+                                    log_action("Revert Purchase", item_name, f"Reverted purchase of {purchase_quantity} units.")
+                            
+                            elif action == "Add":
+                                ws_inventory_data = ws.get_all_values()
+                                for i, row_values in enumerate(ws_inventory_data):
+                                    if row_values and row_values[1] == item_name:
+                                        ws.delete_rows(i + 1)
+                                        log_action("Revert Add", item_name, f"Deleted item that was previously added.")
+                                        break
+                                
+
+                        # Update inventory sheet
+                        set_with_dataframe(ws, df, include_index=False, resize=True)
+                        
+                        # Delete logs
+                        deleted_indices = deleted_rows.index.tolist()
+                        for index in sorted(deleted_indices, reverse=True):
+                            ws.delete_rows(index + 2)
+                        
+                        st.success("Selected logs have been reverted and deleted successfully! Refreshing data...")
+                        clear_cache()
+                    
+                else:
+                    st.info("No logs selected for deletion or reversion.")
+                
+            except Exception as e:
+                st.error(f"Error reverting action: {e}")
+
+            # st.download_button(...)
             csv = filtered_logs_df.to_csv(index=False).encode('utf-8')
             st.download_button(
                 label="Download Logs as CSV",
