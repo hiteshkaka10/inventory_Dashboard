@@ -175,7 +175,7 @@ if st.sidebar.button("📋 View Logs", key="sidebar_logs_btn"):
 if st.session_state['current_page'] != "Home":
     if st.button("⬅️ Back to Home"):
         back_to_home()
-    
+
 st.markdown("<h3>WELCOME TO <span style='color:red'>ASHISH SARL</span> INVENTORY</h3>", unsafe_allow_html=True)
 st.button("Refresh Inventory Data", on_click=clear_cache, help="Click to reload the latest data from the Google Sheet.")
 
@@ -186,7 +186,7 @@ st.button("Refresh Inventory Data", on_click=clear_cache, help="Click to reload 
 if st.session_state['current_page'] == "Home":
     st.subheader("Dashboard")
     st.markdown("Use the buttons below or the sidebar to navigate.")
-    
+
     col_buttons = st.columns(3)
     with col_buttons[0]:
         if st.button("📦 View Items"):
@@ -200,7 +200,7 @@ if st.session_state['current_page'] == "Home":
         if st.button("🚚 Move Item"):
             st.session_state['current_page'] = "Move Item"
             st.rerun()
-    
+
     col_buttons2 = st.columns(3)
     with col_buttons2[0]:
         if st.button("🛒 Purchase Item"):
@@ -210,18 +210,18 @@ if st.session_state['current_page'] == "Home":
         if st.button("📋 View Logs"):
             st.session_state['current_page'] = "View Logs"
             st.rerun()
-    
+
     st.markdown("---")
 
     st.subheader("Monthly Inventory Activity")
-    
+
     if not df_logs.empty:
         # Prepare data for charts
         df_logs['Month'] = df_logs['Timestamp'].dt.to_period('M').astype(str)
-        
+
         moves_df = df_logs[df_logs['Action'].str.contains('Move')]
         purchases_df = df_logs[df_logs['Action'].str.contains('Purchase')]
-        
+
         # Extract quantity from details using regex
         def get_quantity(details):
             match = re.search(r"Moved (\d+) units", details)
@@ -231,7 +231,7 @@ if st.session_state['current_page'] == "Home":
 
         moves_df['Quantity'] = moves_df['Details'].apply(get_quantity)
         purchases_df['Quantity'] = purchases_df['Details'].apply(get_quantity)
-        
+
         monthly_moves = moves_df.groupby('Month')['Quantity'].sum().reset_index()
         monthly_purchases = purchases_df.groupby('Month')['Quantity'].sum().reset_index()
 
@@ -248,10 +248,10 @@ if st.session_state['current_page'] == "Home":
 # -----------------------------
 elif st.session_state['current_page'] == "View Items":
     st.subheader("Inventory List")
-    
+
     # Universal Search Bar
     search_term = st.text_input("Search for any keyword (Item, Category, or Location)", "")
-    
+
     # Check if df is not empty before filtering
     if not df.empty:
         # Universal search logic
@@ -274,29 +274,29 @@ elif st.session_state['current_page'] == "View Items":
             try:
                 # Find rows marked for deletion
                 deleted_rows = edited_df[edited_df['Delete?']]
-                
+
                 if not deleted_rows.empty:
                     st.warning("Are you sure you want to delete the selected items? This action cannot be undone.")
                     if st.button("Confirm Deletion"):
                         # Get original indices to delete from Google Sheet
                         deleted_indices = deleted_rows.index.tolist()
-                        
+
                         for index in sorted(deleted_indices, reverse=True):
                             ws.delete_rows(index + 2)
                             deleted_item_name = filtered_df.loc[index]['Item Name']
                             log_action("Delete", deleted_item_name, f"Deleted item from inventory via data editor.")
-                        
+
                         st.success("Selected items deleted successfully! Refreshing data...")
                         clear_cache()
                 else:
                     updated_df = edited_df.drop(columns=['Delete?'])
                     set_with_dataframe(ws, updated_df, include_index=False, resize=True)
-                    
+
                     st.success("Changes saved successfully! Refreshing data...")
                     clear_cache()
             except Exception as e:
                 st.error(f"Error saving changes: {e}")
-        
+
         # Download button for inventory list
         csv = filtered_df.to_csv(index=False).encode('utf-8')
         st.download_button(
@@ -343,7 +343,7 @@ elif st.session_state['current_page'] == "Add Item":
                 'Current Stock': initial_stock
             })
             st.success(f"Added {name} to the addition list.")
-    
+
     st.markdown("---")
     st.subheader("Items to Add")
     if st.session_state['add_list']:
@@ -358,15 +358,15 @@ elif st.session_state['current_page'] == "Add Item":
                     for item in st.session_state['add_list']:
                         item['Sr No'] = next_sr_no
                         next_sr_no += 1
-                    
+
                     new_items_df = pd.DataFrame(st.session_state['add_list'])
                     updated_df = pd.concat([df, new_items_df], ignore_index=True)
-                    
+
                     set_with_dataframe(ws, updated_df, include_index=False, resize=True)
-                    
+
                     for item in st.session_state['add_list']:
                         log_action("Add", item['Item Name'], f"Added new item with initial stock: {item['Initial stock']}.")
-                    
+
                     st.success("All items added successfully! Inventory updated.")
                     st.session_state['add_list'] = []  # Clear the list
                     clear_cache()
@@ -390,7 +390,7 @@ elif st.session_state['current_page'] == "Move Item":
     with st.form("move_item_form"):
         item_names = df['Item Name'].tolist() if not df.empty else []
         selected_item = st.selectbox("Select Item to Move", [''] + item_names, key="move_item_select")
-        
+
         col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
         with col1:
             from_location = st.selectbox("Moving From", ["godown", "Shop"], index=0, key="move_from_location")
@@ -423,7 +423,7 @@ elif st.session_state['current_page'] == "Move Item":
     if st.session_state['moves_list']:
         moves_df = pd.DataFrame(st.session_state['moves_list'])
         st.dataframe(moves_df, use_container_width=True)
-        
+
         col_move_buttons = st.columns(2)
         with col_move_buttons[0]:
             if st.button("Execute All Moves"):
@@ -432,16 +432,16 @@ elif st.session_state['current_page'] == "Move Item":
                         item_name = move['Item Name']
                         move_quantity = move['Quantity']
                         to_location = move['To Location']
-                        
+
                         original_stock = df.loc[df['Item Name'] == item_name, 'Current Stock'].iloc[0]
                         df.loc[df['Item Name'] == item_name, 'Current Stock'] -= move_quantity
                         df.loc[df['Item Name'] == item_name, 'Location'] = to_location
-                        
+
                         new_stock = df.loc[df['Item Name'] == item_name, 'Current Stock'].iloc[0]
                         log_action("Move", item_name, f"Moved {move_quantity} units from {move['From Location']} to {to_location}. Stock changed from {original_stock} to {new_stock}.")
 
                     set_with_dataframe(ws, df, include_index=False, resize=True)
-                    
+
                     st.success("All moves executed successfully! Inventory updated.")
                     st.session_state['moves_list'] = []  # Clear the list
                     clear_cache()
@@ -460,7 +460,7 @@ elif st.session_state['current_page'] == "Move Item":
 elif st.session_state['current_page'] == "Purchase Item":
     st.subheader("Purchase Inventory Items")
     st.markdown("Use the form below to add items to a list of purchases. Click 'Execute All Purchases' when finished.")
-    
+
     # Form to add a single purchase
     with st.form("purchase_item_form"):
         item_names = df['Item Name'].tolist() if not df.empty else []
@@ -482,13 +482,13 @@ elif st.session_state['current_page'] == "Purchase Item":
                 'Quantity': purchase_quantity
             })
             st.success(f"Added {purchase_quantity} of {selected_item} to the purchase list.")
-    
+
     st.markdown("---")
     st.subheader("Purchase List")
     if st.session_state['purchase_list']:
         purchase_df = pd.DataFrame(st.session_state['purchase_list'])
         st.dataframe(purchase_df, use_container_width=True)
-        
+
         col_purchase_buttons = st.columns(2)
         with col_purchase_buttons[0]:
             if st.button("Execute All Purchases"):
@@ -496,15 +496,15 @@ elif st.session_state['current_page'] == "Purchase Item":
                     for purchase in st.session_state['purchase_list']:
                         item_name = purchase['Item Name']
                         purchase_quantity = purchase['Quantity']
-                        
+
                         original_stock = df.loc[df['Item Name'] == item_name, 'Current Stock'].iloc[0]
                         df.loc[df['Item Name'] == item_name, 'Current Stock'] += purchase_quantity
-                        
+
                         new_stock = df.loc[df['Item Name'] == item_name, 'Current Stock'].iloc[0]
                         log_action("Purchase", item_name, f"Purchased {purchase_quantity} units. Stock changed from {original_stock} to {new_stock}.")
 
                     set_with_dataframe(ws, df, include_index=False, resize=True)
-                    
+
                     st.success("All purchases executed successfully! Inventory updated.")
                     st.session_state['purchase_list'] = []  # Clear the list
                     clear_cache()
@@ -516,41 +516,41 @@ elif st.session_state['current_page'] == "Purchase Item":
                 st.rerun()
     else:
         st.info("The purchase list is empty. Add items using the form above.")
-                
+
 # -----------------------------
 # View Logs
 # -----------------------------
 elif st.session_state['current_page'] == "View Logs":
     st.subheader("App Activity Logs")
-    
+
     # Date picker for filtering logs
     if not df_logs.empty:
         log_date = st.date_input("Select a date to view logs", datetime.date.today())
-        
+
         filtered_logs_df = df_logs[df_logs['Timestamp'].dt.date == log_date]
-        
+
         if not filtered_logs_df.empty:
-            
+
             # Create a revert button column
             edited_logs_df = filtered_logs_df.copy()
             edited_logs_df['Revert?'] = False
 
-            edited_logs_df = st.data_editor(edited_logs_df, 
+            edited_logs_df = st.data_editor(edited_logs_df,
                                            hide_index=True,
                                            use_container_width=True,
                                            column_order=["Timestamp", "Action", "Item Name", "Details", "Revert?"])
-            
+
             # Button to revert and delete selected logs
             if st.button('Revert and Delete Selected Logs'):
                 try:
                     deleted_rows = edited_logs_df[edited_logs_df['Revert?']]
-                    
+
                     if not deleted_rows.empty:
                         for index, row in deleted_rows.iterrows():
                             action = row['Action']
                             item_name = row['Item Name']
                             details = row['Details']
-                            
+
                             # Parse quantity and location from details string
                             if action == "Move":
                                 regex = r"Moved (\d+) units from (.+) to (.+)\. Stock changed from (\d+) to (\d+)\."
@@ -558,11 +558,11 @@ elif st.session_state['current_page'] == "View Logs":
                                 if match:
                                     move_quantity = int(match.group(1))
                                     from_location = match.group(2)
-                                    
+
                                     # Perform reversal
                                     df.loc[df['Item Name'] == item_name, 'Current Stock'] += move_quantity
                                     df.loc[df['Item Name'] == item_name, 'Location'] = from_location
-                                    
+
                                     log_action("Revert Move", item_name, f"Reverted move of {move_quantity} units. Location reverted to {from_location}.")
 
                             elif action == "Purchase":
@@ -570,12 +570,12 @@ elif st.session_state['current_page'] == "View Logs":
                                 match = re.search(regex, details)
                                 if match:
                                     purchase_quantity = int(match.group(1))
-                                    
+
                                     # Perform reversal
                                     df.loc[df['Item Name'] == item_name, 'Current Stock'] -= purchase_quantity
-                                    
+
                                     log_action("Revert Purchase", item_name, f"Reverted purchase of {purchase_quantity} units.")
-                            
+
                             elif action == "Add":
                                 ws_inventory_data = ws.get_all_values()
                                 for i, row_values in enumerate(ws_inventory_data):
@@ -583,23 +583,20 @@ elif st.session_state['current_page'] == "View Logs":
                                         ws.delete_rows(i + 1)
                                         log_action("Revert Add", item_name, f"Deleted item that was previously added.")
                                         break
-                                
+
                         # Update inventory sheet
                         set_with_dataframe(ws, df, include_index=False, resize=True)
-                        
+
                         # Delete logs
                         deleted_indices = deleted_rows.index.tolist()
                         for index in sorted(deleted_indices, reverse=True):
                             ws.delete_rows(index + 2)
-                        
+
                         st.success("Selected logs have been reverted and deleted successfully! Refreshing data...")
                         clear_cache()
-                    
-                else:
-                    st.info("No logs selected for deletion or reversion.")
-                
-            except Exception as e:
-                st.error(f"Error reverting action: {e}")
+
+                except Exception as e:
+                    st.error(f"Error reverting action: {e}")
 
             # Download button for logs
             csv = filtered_logs_df.to_csv(index=False).encode('utf-8')
