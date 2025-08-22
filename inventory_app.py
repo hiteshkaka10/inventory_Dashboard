@@ -334,7 +334,7 @@ elif st.session_state['current_page'] == "Add Item":
         with col_add_buttons[1]:
             if st.button("Cancel"):
                 st.session_state['add_list'] = []
-                st.rerun()
+                back_to_home()
     else:
         st.info("The addition list is empty. Add items using the form above.")
 
@@ -488,6 +488,15 @@ elif st.session_state['current_page'] == "View Logs":
         
         if not filtered_logs_df.empty:
             st.dataframe(filtered_logs_df, use_container_width=True)
+
+            csv = filtered_logs_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="Download Logs as CSV",
+                data=csv,
+                file_name=f"logs_{log_date}.csv",
+                mime='text/csv',
+            )
+
         else:
             st.info(f"No log data found for {log_date}.")
     else:
